@@ -36,9 +36,15 @@
     loginForm.querySelector('button[type="submit"]').disabled = true;
     setStatus("Connecting to chat server…", false);
     // Same-origin WebSocket; works on localhost and behind an HTTPS reverse proxy.
-   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-   const wsUrl = `${scheme}//${location.host}/ws`;
-   ws = new WebSocket(wsUrl);
+    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+
+    const wsUrl =
+      location.hostname === "localhost" ||
+        location.hostname === "127.0.0.1"
+        ? `${scheme}//${location.hostname}:8081/ws`
+        : `${scheme}//${location.host}/ws`;
+
+    ws = new WebSocket(wsUrl);
     ws.onopen = () => send(`${register ? "REGISTER" : "LOGIN"}|${user}|${pass}`);
     ws.onmessage = (event) => handleLine(String(event.data));
     ws.onerror = () => {
@@ -147,8 +153,8 @@
     if (Number.isNaN(date.getTime())) return "";
     const today = new Date();
     return date.toDateString() === today.toDateString()
-      ? date.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})
-      : date.toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
+      ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
   function addMessage(sender, text, ms, mine, isPrivate) {
     const empty = messages.querySelector(".empty-state"); if (empty) empty.remove();
@@ -210,12 +216,57 @@
   function scrollMessages() { messages.scrollTop = messages.scrollHeight; }
   function sendMessage(e) {
     e.preventDefault();
+
     const text = messageInput.value.trim();
+
     if (!text) return;
-    if (text === "/users") { addSystem("Online users are listed in the sidebar."); messageInput.value = ""; return; }
-    if (text === "/help") { addSystem("Send a public message, or use /msg username message for a private message. Use Attach to share a file (up to 2 MB)."); messageInput.value = ""; return; }
-    if (text === "/quit") { logout(); return; }
-    if (send(text.startsWith("/msg ") ? "PM|" + text.slice(5) : "MSG|" + text)) messageInput.value = "";
+
+    if (text === "/users") {
+      addSystem("Online users are listed in the sidebar.");
+      messageInput.value = "";
+      return;
+    }
+
+    if (text === "/help") {
+      addSystem(
+        "Send a public message, or use /msg username message for a private message. Use Attach to share a file (up to 2 MB)."
+      );
+      messageInput.value = "";
+      return;
+    }
+
+    if (text === "/quit") {
+      logout();
+      return;
+    }
+
+    // Check whether this is a private message.
+    const privateMatch = text.match(/^\/msg\s+(\S+)\s+([\s\S]+)$/);
+
+    if (text.startsWith("/msg ")) {
+      if (!privateMatch) {
+        addSystem("Usage: /msg username message");
+        return;
+      }
+
+      const target = privateMatch[1];
+      const privateText = privateMatch[2].trim();
+
+      if (!privateText) {
+        addSystem("Please enter a message.");
+        return;
+      }
+
+      // Send private message to the server.
+      if (send(`PM|${target}|${privateText}`)) {
+        messageInput.value = "";
+      }
+    } else {
+      // Send public message to everyone.
+      if (send(`MSG|${text}`)) {
+        messageInput.value = "";
+      }
+    }
   }
   $("sendForm").addEventListener("submit", sendMessage);
   $("publicChatBtn").addEventListener("click", () => {
